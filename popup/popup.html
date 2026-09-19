@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FormFill Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
+                stroke="url(#hg)" stroke-width="1.8" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="hg" x1="0" y1="0" x2="24" y2="24">
+              <stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#2563eb"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div>
+        <h1 class="app-title">FormFill <span>Pro</span></h1>
+        <p class="app-subtitle">Smart Autofill · Up to 6 users</p>
+      </div>
+    </div>
+    <div id="status-badge" class="status-badge hidden">
+      <span class="status-dot"></span>
+      <span id="status-text">Saved</span>
+    </div>
+  </header>
+
+  <!-- ── Tab Nav ── -->
+  <nav class="tabs">
+    <button class="tab-btn" data-tab="fill" id="tab-fill">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
+      </svg>
+      Fill Form
+    </button>
+    <button class="tab-btn" data-tab="profile" id="tab-profile">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      Profiles
+    </button>
+    <button class="tab-btn" data-tab="general" id="tab-general">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+      </svg>
+      General
+    </button>
+  </nav>
+
+  <!-- ══════════════════════════════════════
+       FILL FORM TAB (default)
+  ══════════════════════════════════════ -->
+  <div class="tab-content active" id="panel-fill">
+
+    <!-- ── Fill Action Bar (TOP) ── -->
+    <div class="fill-action-bar">
+      <div class="fill-action-left">
+        <div class="fill-selection-info">
+          <span class="fill-count" id="fill-count">0 selected</span>
+          <span class="fill-dot">·</span>
+          <span class="fill-general-badge hidden" id="fill-general-badge">+ general</span>
+        </div>
+        <p class="fill-action-hint" id="fill-action-hint">Select users below to fill</p>
+      </div>
+      <button class="btn-fill-top" id="btn-fill-all" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+        Fill Now
+      </button>
+    </div>
+
+    <!-- ── User Cards ── -->
+    <div class="fill-scroll">
+      <div class="user-grid" id="user-grid">
+        <!-- Rendered by popup.js -->
+      </div>
+
+      <!-- General Details Preview -->
+      <div class="general-preview-card" id="general-preview-card">
+        <div class="gp-header">
+          <div class="gp-title">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            General Details
+          </div>
+          <button class="gp-edit-btn" id="btn-edit-general">Edit ›</button>
+        </div>
+        <div class="gp-body" id="gp-body"></div>
+      </div>
+
+      <!-- Options -->
+      <div class="fill-options">
+        <h3 class="options-title">Options</h3>
+        <label class="checkbox-row" for="opt-trigger">
+          <input type="checkbox" id="opt-trigger" checked />
+          <span class="checkbox-custom"></span>
+          Trigger change events (React / Vue)
+        </label>
+      </div>
+
+
+      <div id="fill-result" class="fill-result hidden"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PROFILE TAB
+  ══════════════════════════════════════ -->
+  <div class="tab-content" id="panel-profile">
+
+    <div class="slot-selector">
+      <span class="slot-label">Active User</span>
+      <div class="slot-tabs">
+        <button class="slot-tab active" data-slot="0" id="slot-tab-0">
+          <span class="slot-num">1</span>
+          <span class="slot-pip" id="slot-pip-0"></span>
+        </button>
+        <button class="slot-tab" data-slot="1" id="slot-tab-1">
+          <span class="slot-num">2</span>
+          <span class="slot-pip" id="slot-pip-1"></span>
+        </button>
+        <button class="slot-tab" data-slot="2" id="slot-tab-2">
+          <span class="slot-num">3</span>
+          <span class="slot-pip" id="slot-pip-2"></span>
+        </button>
+        <button class="slot-tab" data-slot="3" id="slot-tab-3">
+          <span class="slot-num">4</span>
+          <span class="slot-pip" id="slot-pip-3"></span>
+        </button>
+        <button class="slot-tab" data-slot="4" id="slot-tab-4">
+          <span class="slot-num">5</span>
+          <span class="slot-pip" id="slot-pip-4"></span>
+        </button>
+        <button class="slot-tab" data-slot="5" id="slot-tab-5">
+          <span class="slot-num">6</span>
+          <span class="slot-pip" id="slot-pip-5"></span>
+        </button>
+      </div>
+    </div>
+
+
+    <div class="form-section">
+
+      <div class="field-group">
+        <label class="field-label" for="inp-name">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+          Full Name
+        </label>
+        <input id="inp-name" class="field-input" type="text" placeholder="e.g. Rajesh Kumar" autocomplete="off" />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v5M12 18v5M4.22 4.22l3.54 3.54M16.24 16.24l3.54 3.54M1 12h5M17 12h5M4.22 19.78l3.54-3.54M16.24 7.76l3.54-3.54"/>
+          </svg>
+          Gender
+        </label>
+        <div class="gender-pills" id="gender-group">
+          <button class="pill-btn" data-value="Male">Male</button>
+          <button class="pill-btn" data-value="Female">Female</button>
+          <button class="pill-btn" data-value="Other">Other</button>
+          <button class="pill-btn" data-value="Prefer not to say">Prefer not to say</button>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="inp-age">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Age
+        </label>
+        <input id="inp-age" class="field-input" type="number" placeholder="e.g. 28" min="1" max="120" autocomplete="off" />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="inp-aadhar">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+          </svg>
+          Aadhar Number
+        </label>
+        <div class="aadhar-input-wrap">
+          <input id="inp-aadhar" class="field-input aadhar-field" type="text"
+            placeholder="XXXX XXXX XXXX" maxlength="14" autocomplete="off" />
+          <button class="toggle-aadhar" id="btn-toggle-aadhar" type="button">
+            <svg id="icon-eye" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg id="icon-eye-off" class="hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M1 1l22 22"/>
+            </svg>
+          </button>
+        </div>
+        <p class="field-hint">12-digit Aadhar · auto-formatted</p>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btn-clear">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/>
+          </svg>
+          Clear
+        </button>
+        <button class="btn btn-primary" id="btn-save">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+          </svg>
+          <span id="save-label">Save User 1</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- ── Backup & Restore ── -->
+    <div class="backup-card">
+      <div class="backup-header">
+        <div class="backup-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+          </svg>
+          Backup &amp; Restore
+        </div>
+        <span class="backup-hint-inline">Survives reinstall</span>
+      </div>
+      <div class="backup-btn-row">
+        <button class="btn-backup" id="btn-export">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Export JSON
+        </button>
+        <button class="btn-backup btn-backup-import" id="btn-import">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          Import JSON
+        </button>
+        <input type="file" id="file-import" accept=".json" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; top:-9999px;" />
+
+
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ══════════════════════════════════════
+       GENERAL TAB
+  ══════════════════════════════════════ -->
+  <div class="tab-content" id="panel-general">
+
+    <div class="info-banner">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <span>Fills <strong>once per form</strong> — shared across all users</span>
+    </div>
+
+    <div class="form-section">
+
+      <div class="field-group">
+        <label class="field-label" for="inp-email">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <polyline points="22,6 12,13 2,6"/>
+          </svg>
+          Email Address
+        </label>
+        <input id="inp-email" class="field-input" type="email" placeholder="e.g. rajesh@example.com" autocomplete="off" />
+      </div>
+
+      <div class="field-row-2">
+        <div class="field-group">
+          <label class="field-label" for="inp-city">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            City
+          </label>
+          <input id="inp-city" class="field-input" type="text" placeholder="e.g. Mumbai" autocomplete="off" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="inp-pincode">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+            </svg>
+            Pincode
+          </label>
+          <input id="inp-pincode" class="field-input" type="text" placeholder="e.g. 400001" maxlength="10" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="field-row-2">
+        <div class="field-group">
+          <label class="field-label" for="inp-state">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <rect x="1" y="3" width="15" height="13" rx="1"/>
+              <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
+              <circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+            </svg>
+            State
+          </label>
+          <input id="inp-state" class="field-input" type="text" placeholder="e.g. Maharashtra" autocomplete="off" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="inp-country">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            Country
+          </label>
+          <input id="inp-country" class="field-input" type="text" placeholder="e.g. India" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btn-clear-general">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2"/>
+          </svg>
+          Clear
+        </button>
+        <button class="btn btn-primary" id="btn-save-general">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+          </svg>
+          Save General Details
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Footer ── -->
+  <footer class="footer">
+    <span>FormFill Pro</span>
+    <span class="footer-dot">·</span>
+    <span>All data stored locally</span>
+  </footer>
+
+</div>
+<script src="popup.js"></script>
+</body>
+</html>
