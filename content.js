@@ -707,9 +707,9 @@ if (!window.__ffProLoaded) {
   //
   //  FF_FILL     — single profile + general
   //  FF_FILL_ALL — array of profiles + general
-  // ═══════════════════════════════════════════
+  const extAPI = typeof browser !== 'undefined' ? browser : chrome;
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  extAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type !== 'FF_FILL' && message.type !== 'FF_FILL_ALL') return false;
 
     (async () => {

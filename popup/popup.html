@@ -31,9 +31,18 @@
         <p class="app-subtitle">Smart Autofill · Up to 6 users</p>
       </div>
     </div>
-    <div id="status-badge" class="status-badge hidden">
-      <span class="status-dot"></span>
-      <span id="status-text">Saved</span>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button id="btn-open-tab" class="btn-icon" title="Open in Full Tab" aria-label="Open in Full Tab">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </button>
+      <div id="status-badge" class="status-badge hidden">
+        <span class="status-dot"></span>
+        <span id="status-text">Saved</span>
+      </div>
     </div>
   </header>
 
@@ -266,7 +275,7 @@
           </svg>
           Import JSON
         </button>
-        <input type="file" id="file-import" accept=".json" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; top:-9999px;" />
+        <input type="file" id="file-import" accept=".json,application/json" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; top:-9999px;" />
 
 
       </div>

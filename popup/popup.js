@@ -5,6 +5,7 @@
 
 'use strict';
 
+const extAPI = typeof browser !== 'undefined' ? browser : chrome;
 const MAX_SLOTS = 6;
 
 
@@ -365,7 +366,7 @@ async function saveCurrentSlot() {
 
   const wasEmpty = !hasData(profiles[activeSlot]);
   profiles[activeSlot] = { name, age, gender, aadhar };
-  await chrome.storage.local.set({ ffProfiles: profiles });
+  await extAPI.storage.local.set({ ffProfiles: profiles });
 
   // Auto-select newly saved slot
   if (wasEmpty) selectedUsers.add(activeSlot);
@@ -377,7 +378,7 @@ async function saveCurrentSlot() {
 
 async function clearCurrentSlot() {
   profiles[activeSlot] = { name: '', gender: '', age: '', aadhar: '' };
-  await chrome.storage.local.set({ ffProfiles: profiles });
+  await extAPI.storage.local.set({ ffProfiles: profiles });
   inpName.value = ''; inpAge.value = ''; inpAadhar.value = '';
   selectGenderPill('');
   selectedUsers.delete(activeSlot);
@@ -413,7 +414,7 @@ async function saveGeneral() {
   }
 
   general = { email, city, pincode, state, country };
-  await chrome.storage.local.set({ ffGeneral: general });
+  await extAPI.storage.local.set({ ffGeneral: general });
   renderGeneralPreview();
   updateFillButton();
   showStatus('General details saved!', 'saved');
@@ -421,7 +422,7 @@ async function saveGeneral() {
 
 async function clearGeneral() {
   general = { email: '', city: '', state: '', country: '', pincode: '' };
-  await chrome.storage.local.set({ ffGeneral: general });
+  await extAPI.storage.local.set({ ffGeneral: general });
   loadGeneralForm();
   renderGeneralPreview();
   updateFillButton();
@@ -436,13 +437,13 @@ btnClearGen.addEventListener('click', clearGeneral);
 // ─────────────────────────────────────────────
 
 async function getActiveTab() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabs = await extAPI.tabs.query({ active: true, currentWindow: true });
   return tabs[0] || null;
 }
 
 async function ensureContentScript(tabId) {
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await extAPI.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
   } catch { /* already injected or restricted page */ }
 }
 
@@ -474,7 +475,7 @@ async function fillSelected() {
 
   let response;
   try {
-    response = await chrome.tabs.sendMessage(tab.id, {
+    response = await extAPI.tabs.sendMessage(tab.id, {
       type:     'FF_FILL_ALL',
       profiles: selectedProfiles,
       general,
@@ -505,13 +506,13 @@ btnFillAll.addEventListener('click', fillSelected);
 //  Backup & Restore (Export / Import JSON)
 // ─────────────────────────────────────────────
 
-function triggerFallbackDownload(url, filename) {
+function triggerFallbackDownload(dataUri, filename) {
   const a = document.createElement('a');
-  a.href = url;
+  a.href = dataUri;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
+  setTimeout(() => document.body.removeChild(a), 100);
   showStatus('Export downloaded!', 'saved');
 }
 
@@ -525,24 +526,38 @@ function exportBackup() {
     };
     const jsonStr = JSON.stringify(payload, null, 2);
     const filename = `formfill-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    const dataUri  = 'data:application/json;charset=utf-8,' + encodeURIComponent(jsonStr);
 
-    if (chrome.downloads && typeof chrome.downloads.download === 'function') {
-      chrome.downloads.download({
+    // Base64 encoding — fully supported by browser.downloads.download & chrome.downloads.download in Firefox and Chrome
+    const bytes = new TextEncoder().encode(jsonStr);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64Str = btoa(binary);
+    const dataUri = 'data:application/json;base64,' + base64Str;
+
+    if (extAPI.downloads && typeof extAPI.downloads.download === 'function') {
+      const downloadPromise = extAPI.downloads.download({
         url: dataUri,
         filename: filename,
         saveAs: false
-      }, () => {
-        if (chrome.runtime.lastError) {
-          triggerFallbackDownload(dataUri, filename);
-        } else {
-          showStatus('Export downloaded!', 'saved');
-        }
       });
+
+      if (downloadPromise && typeof downloadPromise.then === 'function') {
+        downloadPromise
+          .then(() => showStatus('Export downloaded!', 'saved'))
+          .catch((err) => {
+            console.warn('[FormFill Pro] downloads.download promise rejected:', err);
+            triggerFallbackDownload(dataUri, filename);
+          });
+      } else {
+        showStatus('Export downloaded!', 'saved');
+      }
     } else {
       triggerFallbackDownload(dataUri, filename);
     }
   } catch (err) {
+    console.error('[FormFill Pro] Export error:', err);
     showStatus('Export failed', 'error');
   }
 }
@@ -611,7 +626,7 @@ async function importBackup(file) {
     }
 
     // 1. Save to local storage synchronously
-    await chrome.storage.local.set({ ffProfiles: profiles, ffGeneral: general });
+    await extAPI.storage.local.set({ ffProfiles: profiles, ffGeneral: general });
 
     // 2. Re-calculate selected users
     selectedUsers.clear();
@@ -636,14 +651,23 @@ async function importBackup(file) {
   }
 }
 
+const isFirefox = typeof browser !== 'undefined' || navigator.userAgent.includes('Firefox');
+const isTabWindow = window.location.search.includes('action=') || window.innerWidth > 500;
+
 if (btnExport) btnExport.addEventListener('click', exportBackup);
 
-if (btnImport && fileImport) {
+if (btnImport) {
   btnImport.addEventListener('click', (e) => {
     e.preventDefault();
-    fileImport.click();
+    if (isFirefox && !isTabWindow) {
+      extAPI.tabs.create({ url: extAPI.runtime.getURL('popup/popup.html?action=import') });
+    } else if (fileImport) {
+      fileImport.click();
+    }
   });
+}
 
+if (fileImport) {
   fileImport.addEventListener('change', async (e) => {
     if (e.target.files && e.target.files.length > 0) {
       await importBackup(e.target.files[0]);
@@ -651,7 +675,12 @@ if (btnImport && fileImport) {
   });
 }
 
-
+const btnOpenTab = document.getElementById('btn-open-tab');
+if (btnOpenTab) {
+  btnOpenTab.addEventListener('click', () => {
+    extAPI.tabs.create({ url: extAPI.runtime.getURL('popup/popup.html') });
+  });
+}
 
 
 // ─────────────────────────────────────────────
@@ -659,13 +688,13 @@ if (btnImport && fileImport) {
 // ─────────────────────────────────────────────
 
 async function init() {
-  const stored = await chrome.storage.local.get(['ffProfiles', 'ffProfile', 'ffGeneral']);
+  const stored = await extAPI.storage.local.get(['ffProfiles', 'ffProfile', 'ffGeneral']);
 
   // Migrate old single-profile format → slot 0
   if (stored.ffProfile && !stored.ffProfiles) {
     profiles[0] = stored.ffProfile;
-    await chrome.storage.local.set({ ffProfiles: profiles });
-    await chrome.storage.local.remove('ffProfile');
+    await extAPI.storage.local.set({ ffProfiles: profiles });
+    await extAPI.storage.local.remove('ffProfile');
   } else if (stored.ffProfiles && Array.isArray(stored.ffProfiles)) {
     stored.ffProfiles.forEach((p, i) => {
       if (i < MAX_SLOTS) profiles[i] = p || { name: '', gender: '', age: '', aadhar: '' };
@@ -690,6 +719,14 @@ async function init() {
   renderUserGrid();
   renderGeneralPreview();
   updateFillButton();
+
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('action') === 'import' && fileImport) {
+    switchTab('profile');
+    setTimeout(() => {
+      fileImport.click();
+    }, 250);
+  }
 }
 
 init();

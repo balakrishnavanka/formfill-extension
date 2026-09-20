@@ -1,50 +1,55 @@
-# FormFill Pro — Chrome Extension
+# FormFill Pro — Cross-Browser Extension
 
-> **Autofill web forms with your saved personal profile** — Name, Gender, Age & Aadhar Number.
+> **Autofill web forms with saved personal profiles** — Multi-user support (up to 6 slots), General Details, and 100% offline Backup Export/Import across Google Chrome, Microsoft Edge, and Mozilla Firefox.
 
 ---
 
 ## Features
 
-- 💾 **Save your profile** once — name, gender, age, and Aadhar number
-- ⚡ **One-click autofill** — intelligently detects form fields using heuristic scoring
-- 🎯 **Smart field detection** — matches fields by `id`, `name`, `placeholder`, `aria-label`, `autocomplete` attribute, and nearby `<label>` text
-- 🔒 **Aadhar masking** — stored securely in local Chrome storage; displayed masked in the preview
-- ⚛️ **React/Vue compatible** — triggers native input events so controlled components update correctly
-- 🌟 **Highlight mode** — briefly glows filled fields so you can verify at a glance
-- 🗃️ **100% offline** — all data stored in `chrome.storage.local`, never leaves your device
+- 👥 **Multi-User Autofill** — Save up to 6 user profiles (Name, Gender, Age, Aadhar) and select any combination to fill multi-passenger / multi-applicant forms.
+- 🌐 **General Details** — Save shared form details (Email, City, Pincode, State, Country) filled automatically alongside profile data.
+- 🦊 **Unified Cross-Browser Support** — Runs on Google Chrome, Microsoft Edge, and Mozilla Firefox using a single codebase.
+- 📦 **Backup Export & Restore** — Export your profiles and general details as JSON and import on any browser or device.
+- ⚡ **High Performance & Race-Condition Free** — Fills general details first, basic user details second, and dynamic Photo ID fields once enabled.
+- 🔒 **100% Offline & Private** — All data is stored in `extAPI.storage.local` on your local device.
 
 ---
 
 ## Installation
 
-### Step 1: Generate Icons
-
-The source icon is at `formfill_icon_source.png`. You need to resize it to 3 sizes:
-
-**Option A — Python (recommended):**
-```bash
-pip install Pillow
-python3 scripts/make_icons.py
-```
-
-**Option B — ImageMagick:**
-```bash
-mkdir -p icons
-convert formfill_icon_source.png -resize 16x16   icons/icon-16.png
-convert formfill_icon_source.png -resize 48x48   icons/icon-48.png
-convert formfill_icon_source.png -resize 128x128 icons/icon-128.png
-```
-
-**Option C — Online tool:**
-Upload `formfill_icon_source.png` to [squoosh.app](https://squoosh.app) or [iLoveIMG](https://www.iloveimg.com/resize-image) and export at 16×16, 48×48, and 128×128 into the `icons/` folder.
-
-### Step 2: Load in Chrome
-
+### Google Chrome
 1. Open Chrome and navigate to `chrome://extensions`
 2. Enable **Developer mode** (toggle in top-right)
 3. Click **Load unpacked**
-4. Select the `formfill-extension/` folder
+4. Select the `formfill-extension/` directory
+
+### Microsoft Edge
+1. Open Edge and navigate to `edge://extensions`
+2. Enable **Developer mode** in the left sidebar
+3. Click **Load unpacked**
+4. Select the `formfill-extension/` directory
+
+### Mozilla Firefox
+1. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on...**
+3. Select `manifest.json` inside the `formfill-extension/` directory
+
+---
+
+## Zipping / Packaging for Distribution
+
+To pack the extension into a single cross-browser `.zip` file for Chrome Web Store, Edge Add-ons, or Firefox Add-ons distribution:
+
+**Option A — Automated Python Script:**
+```bash
+python3 scripts/pack_extension.py
+```
+This generates `Dist/formfill-pro-v1.0.0.zip` containing all required files.
+
+**Option B — Command Line:**
+```bash
+zip -r Dist/formfill-pro-v1.0.0.zip manifest.json service-worker.js content.js popup icons README.md
+```
 
 ---
 

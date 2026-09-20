@@ -4,15 +4,16 @@
 
 'use strict';
 
-chrome.runtime.onInstalled.addListener(async (details) => {
+const extAPI = typeof browser !== 'undefined' ? browser : chrome;
+
+extAPI.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
-    // Initialize empty profile on first install
-    await chrome.storage.local.set({ ffProfile: {} });
+    await extAPI.storage.local.set({ ffProfiles: [] });
     console.log('[FormFill Pro] Extension installed.');
   }
 });
 
-// Keep alive ping — not needed for basic storage use case, but good practice
-chrome.runtime.onStartup.addListener(() => {
-  console.log('[FormFill Pro] Browser started.');
+extAPI.runtime.onStartup.addListener(() => {
+  console.log('[FormFill Pro] Extension background active.');
 });
+
