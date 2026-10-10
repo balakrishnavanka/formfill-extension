@@ -1,17 +1,7 @@
 // ─────────────────────────────────────────────
-//  FormFill Pro — Content Script  (v4)
-//  Handles both native <select> and custom
-//  <ul>/<li> floating-dropdown components.
-//
-//  Specifically handles:
-//   • readonly text inputs with <ul>/<li> dropdowns
-//   • disabled Photo ID Number that becomes enabled
-//     after the ID type is selected
-//
-//  Fill order (race-condition-free):
-//   Pass 1 — ALL users: Name → Age → Gender → Direct Aadhar
-//   Pass 2 — ALL users: Photo ID Type → wait → Photo ID Number
-//   Pass 3 — Once:      General Details
+//  FormFill Pro — Content Script (v11)
+//  Uses chrome.debugger (CDP) for truly trusted
+//  mouse events that pass all isTrusted checks.
 // ─────────────────────────────────────────────
 
 'use strict';
@@ -27,16 +17,16 @@ if (!window.__ffProLoaded) {
     name: {
       keywords: ['name','fullname','full-name','full_name','yourname','username',
                  'firstname','first-name','first_name','lastname','last-name','last_name',
-                 'given','surname','applicant'],
+                 'given','surname','applicant','pilgrimname','pilgrim_name'],
       autocomplete: ['name','given-name','family-name','username']
     },
     gender: {
       keywords: ['gender','sex','genderid','gender_id','biologicalsex','biological_sex',
-                 'selectgender','choosegender'],
+                 'selectgender','choosegender','pilgrimgender','pilgrim_gender'],
       autocomplete: ['sex']
     },
     age: {
-      keywords: ['age','years','agein','howold','yourage'],
+      keywords: ['age','years','agein','howold','yourage','pilgrimage','pilgrim_age'],
       autocomplete: []
     },
     aadhar: {
@@ -50,7 +40,9 @@ if (!window.__ffProLoaded) {
                  'photoid','photo_id','idproof','id_proof','identitytype','identity_type',
                  'prooftype','proof_type','governmentid','government_id','govid','gov_id',
                  'selectid','chooseid','verificationtype','idcard','id_card',
-                 'proofofidentity','identitydocument'],
+                 'proofofidentity','identitydocument','idprooftype','id_proof_type',
+                 'idprooftypeid','id_proof_type_id','idproofno','identityproof',
+                 'photoidproof','photo_id_proof'],
       autocomplete: []
     },
     photoidnumber: {
@@ -58,33 +50,36 @@ if (!window.__ffProLoaded) {
                  'docnumber','doc_number','photoidnumber','photo_id_number',
                  'idno','id_no','proofnumber','proof_number','govtidnumber',
                  'identitynumber','identity_number','verificationnumber',
-                 'licencenumber','passportnumber','pannumber'],
+                 'licencenumber','passportnumber','pannumber','idproofnumber',
+                 'id_proof_number','idproofno','id_proof_no'],
       autocomplete: []
     },
     email: {
       keywords: ['email','emailaddress','email_address','emailid','email_id',
-                 'mail','contactemail','contact_email','useremail','user_email'],
+                 'mail','contactemail','contact_email','useremail','user_email',
+                 'pilgrimemail','pilgrim_email'],
       autocomplete: ['email']
     },
     city: {
       keywords: ['city','cityname','city_name','town','municipality',
-                 'addresscity','address_city','hometown','home_town'],
+                 'addresscity','address_city','hometown','home_town',
+                 'pilgrimcity','pilgrim_city','village','district','mandal','location','place'],
       autocomplete: ['address-level2']
     },
     state: {
       keywords: ['state','statename','state_name','province','region',
-                 'addressstate','address_state'],
+                 'addressstate','address_state','pilgrimstate','pilgrim_state'],
       autocomplete: ['address-level1']
     },
     country: {
       keywords: ['country','countryname','country_name','nation',
-                 'addresscountry','address_country'],
+                 'addresscountry','address_country','pilgrimcountry','pilgrim_country'],
       autocomplete: ['country','country-name']
     },
     pincode: {
       keywords: ['pincode','pin_code','pin','zipcode','zip_code','zip',
                  'postalcode','postal_code','postcode','post_code',
-                 'addresspin','address_pin'],
+                 'addresspin','address_pin','pilgrimpincode','pilgrim_pincode'],
       autocomplete: ['postal-code']
     }
   };
@@ -93,36 +88,25 @@ if (!window.__ffProLoaded) {
     return (s || '').toLowerCase().replace(/[\s_\-]+/g, '');
   }
 
-  // Pre-normalize hints table keywords once
   for (const k in FIELD_HINTS) {
     FIELD_HINTS[k].normKeywords = FIELD_HINTS[k].keywords.map(norm);
     FIELD_HINTS[k].normAutocomplete = FIELD_HINTS[k].autocomplete.map(norm);
   }
 
-  const GENDER_SYNONYMS = {
-    male:               ['male','m','1','boy','man','gentleman','mr'],
-    female:             ['female','f','2','girl','woman','lady','mrs','miss','ms'],
-    other:              ['other','o','3','nonbinary','non-binary','transgender','x'],
-    'prefer not to say':['prefernottosay','notspecified','notdisclosed',
-                         'undisclosed','na','n/a','none','0','unknown']
-  };
-
   const AADHAR_OPTION_KEYWORDS = [
     'aadhaar','aadhar','adhaar','adhar','uid','uidai',
-    'aadhaarcard','aadharcard','aadhaar card','aadhar card'
+    'aadhaarcard','aadharcard','aadhaar card','aadhar card',
+    'photo id proof','id proof'
   ];
-
-  // ═══════════════════════════════════════════
-  //  UTILITIES & ELEMENT METADATA CACHE
-  // ═══════════════════════════════════════════
-
 
   let metaCache = new Map();
 
   function getElMeta(el) {
     if (metaCache.has(el)) return metaCache.get(el);
 
-    const sig = ['id','name','placeholder','aria-label','label','autocomplete','title','class']
+    const sig = ['id','name','type','placeholder','aria-label','label','autocomplete','title','class',
+                 'formcontrolname','formControlName','ng-reflect-name','data-testid','data-test-id',
+                 'data-qa','data-cy','aria-describedby','aria-labelledby']
       .map((a) => norm(el.getAttribute(a) || ''))
       .join(' ');
 
@@ -139,6 +123,15 @@ if (!window.__ffProLoaded) {
       const prev = el.previousElementSibling;
       if (prev && ['LABEL','SPAN','P','DIV'].includes(prev.tagName))
         lblText = norm(prev.textContent);
+    }
+    if (!lblText) {
+      const next = el.nextElementSibling;
+      if (next && ['LABEL','SPAN','P','DIV'].includes(next.tagName))
+        lblText = norm(next.textContent);
+    }
+    if (!lblText && el.parentElement) {
+      const pLbl = el.parentElement.querySelector('label');
+      if (pLbl) lblText = norm(pLbl.textContent);
     }
     if (!lblText) {
       const lblAttr = el.getAttribute('label');
@@ -166,7 +159,6 @@ if (!window.__ffProLoaded) {
     return score;
   }
 
-  /** Visible check — does NOT filter on disabled. */
   function isVisible(el) {
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return false;
@@ -178,7 +170,7 @@ if (!window.__ffProLoaded) {
     return new Promise((r) => setTimeout(r, ms));
   }
 
-  function waitFor(condition, timeoutMs = 2500, intervalMs = 15) {
+  function waitFor(condition, timeoutMs = 3000, intervalMs = 50) {
     return new Promise((resolve) => {
       const start = Date.now();
       (function poll() {
@@ -190,37 +182,150 @@ if (!window.__ffProLoaded) {
     });
   }
 
-
-
-
   // ═══════════════════════════════════════════
-  //  FILL — plain text input (React/Vue safe)
+  //  CDP CLICK — truly trusted mouse events
+  //  via chrome.debugger dispatched from the
+  //  service worker.
   // ═══════════════════════════════════════════
 
-  function fillText(el, value, fireEvents) {
+  function cdpClick(x, y) {
+    return new Promise((resolve) => {
+      try {
+        extAPI.runtime.sendMessage(
+          { action: 'CDP_CLICK', payload: { x, y } },
+          (resp) => resolve(extAPI.runtime.lastError ? { ok: false } : (resp || { ok: false }))
+        );
+      } catch (e) {
+        resolve({ ok: false });
+      }
+    });
+  }
+
+  function cdpType(text) {
+    return new Promise((resolve) => {
+      try {
+        extAPI.runtime.sendMessage(
+          { action: 'CDP_TYPE', payload: { text } },
+          (resp) => resolve(extAPI.runtime.lastError ? { ok: false } : (resp || { ok: false }))
+        );
+      } catch (e) {
+        resolve({ ok: false });
+      }
+    });
+  }
+
+  /**
+   * Perform a truly trusted click on an element using CDP.
+   * Falls back to synthetic events if CDP is unavailable.
+   */
+  async function trustedClick(el) {
+    if (!el) return;
+    try { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }); } catch {}
+    await delay(10);
+
+    const rect = el.getBoundingClientRect();
+    const cx = Math.round(rect.left + rect.width / 2);
+    const cy = Math.round(rect.top + rect.height / 2);
+
+    const resp = await cdpClick(cx, cy);
+    if (!resp || !resp.ok) {
+      // Fallback: synthetic events
+      el.focus();
+      el.click();
+    }
+    await delay(20);
+  }
+
+  /**
+   * Type text into the currently focused element using CDP.
+   * Falls back to value setter if CDP is unavailable.
+   */
+  async function trustedType(el, text) {
+    if (!el) return;
+    try { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }); } catch {}
+    await delay(10);
+
+    // Click to focus for real
+    const rect = el.getBoundingClientRect();
+    const cx = Math.round(rect.left + rect.width / 2);
+    const cy = Math.round(rect.top + rect.height / 2);
+    await cdpClick(cx, cy);
+    await delay(20);
+
+    // Select all existing text and delete it
+    const selectResp = await new Promise((resolve) => {
+      try {
+        extAPI.runtime.sendMessage(
+          { action: 'CDP_SELECT_ALL_DELETE' },
+          (resp) => resolve(extAPI.runtime.lastError ? { ok: false } : (resp || { ok: false }))
+        );
+      } catch (e) {
+        resolve({ ok: false });
+      }
+    });
+    await delay(15);
+
+    // Type the text via CDP
+    const resp = await cdpType(text);
+    
+    if (!resp || !resp.ok) {
+      // Fallback: advanced synthetic typing simulation (For Firefox)
+      await setElementValueFallback(el, text);
+    }
+    await delay(15);
+  }
+
+  /**
+   * Advanced fallback value setter for Firefox (which lacks CDP support).
+   * It painstakingly simulates individual keystroke events and bypasses React's
+   * internal value trackers to spoof a human typing as closely as possible without CDP.
+   */
+  async function setElementValueFallback(el, strVal) {
+    if (!el) return;
     const wasReadonly = el.hasAttribute('readonly');
     const wasDisabled = el.hasAttribute('disabled');
     if (wasReadonly) el.removeAttribute('readonly');
     if (wasDisabled) el.removeAttribute('disabled');
+    el.disabled = false;
 
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-                || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-    if (setter) setter.call(el, value);
-    else        el.value = value;
+    el.focus();
+    await delay(10);
 
-    const eventsToFire = [
-      new Event('input',  { bubbles: true }),
-      new Event('change', { bubbles: true }),
-      new KeyboardEvent('keydown', { bubbles: true }),
-      new KeyboardEvent('keypress',{ bubbles: true }),
-      new KeyboardEvent('keyup',   { bubbles: true }),
-      new FocusEvent('blur',       { bubbles: true }),
-    ];
-    for (const ev of eventsToFire) el.dispatchEvent(ev);
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    
+    // Clear field first
+    if (el._valueTracker) { try { el._valueTracker.setValue(''); } catch {} }
+    if (setter) setter.call(el, '');
+    else el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Type character by character synthetically
+    for (let i = 0; i < strVal.length; i++) {
+      const char = strVal[i];
+      const keyCode = char.charCodeAt(0);
+      const codeStr = 'Key' + char.toUpperCase();
+
+      el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: char, code: codeStr, keyCode }));
+      el.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, cancelable: true, key: char, code: codeStr, keyCode }));
+      
+      if (el._valueTracker) { try { el._valueTracker.setValue(el.value); } catch {} }
+      if (setter) setter.call(el, el.value + char);
+      else el.value += char;
+      
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: char, code: codeStr, keyCode }));
+      
+      await delay(5);
+    }
+
+    try { el.setAttribute('value', strVal); } catch {}
+    el.dispatchEvent(new Event('change', { bubbles: true }));
 
     if (wasReadonly) el.setAttribute('readonly', '');
-    // Do NOT restore disabled — that would blank out the value again
   }
+
+  // Removed stealthType as it breaks React state validation
 
   // ═══════════════════════════════════════════
   //  GENDER MATCHING & RADIO HELPERS
@@ -237,32 +342,27 @@ if (!window.__ffProLoaded) {
       if (text.includes('male') || text.includes('purush')) return true;
       return false;
     }
-
     if (target === 'female') {
       if (text === 'female' || text === 'f' || text === 'woman' || text === 'girl' || text === 'mrs' || text === 'miss' || text === 'ms' || text === '2') return true;
       if (text.includes('female') || text.includes('stri') || text.includes('mahila')) return true;
       return false;
     }
-
     if (target === 'other') {
       if (text.includes('female') || (text.includes('male') && !text.includes('trans'))) return false;
       if (text === 'other' || text === 'o' || text === 'transgender' || text === 'nonbinary' || text === 'thirdgender' || text === '3') return true;
       if (text.includes('other') || text.includes('trans')) return true;
       return false;
     }
-
     if (target.includes('prefer') || target.includes('say')) {
       if (text.includes('prefer') || text.includes('not') || text.includes('disclose') || text.includes('specified')) return true;
       return false;
     }
-
     return text === target || text.includes(target);
   }
 
   function findRadioGroups(globalUsed) {
     const radios = Array.from(document.querySelectorAll('input[type="radio"]'))
-      .filter((r) => isVisible(r) && !r.disabled && !globalUsed.has(r));
-
+      .filter((r) => isVisible(r) && !globalUsed.has(r));
     const groupsMap = new Map();
     radios.forEach((r) => {
       const key = r.name ? `name:${r.name}` : `parent:${r.parentElement ? (r.parentElement.id || r.parentElement.className || r.parentElement.tagName) : Math.random()}`;
@@ -276,35 +376,26 @@ if (!window.__ffProLoaded) {
     const groups = findRadioGroups(globalUsed);
     let bestGroup = null, bestScore = 1;
     for (const group of groups) {
-      const first = group[0];
-      const s = scoreField(first, key);
+      const s = scoreField(group[0], key);
       if (s > bestScore) { bestScore = s; bestGroup = group; }
     }
     return bestGroup;
   }
 
-  function fillRadioGroup(radios, value, isGender, fireEvents) {
-    let match = null;
-    if (isGender) {
-      match = radios.find((r) => {
-        const text = (r.value || '') + ' ' + (r.id || '') + ' ' + labelText(r);
-        return matchGenderText(text, value) || matchGenderText(r.value, value);
-      });
-    } else {
-      const target = norm(value);
-      match = radios.find((r) => {
-        const text = norm((r.value || '') + ' ' + labelText(r));
-        return text === target || text.includes(target);
-      });
-    }
+  async function fillRadioGroup(radios, value, isGender) {
+    const match = isGender
+      ? radios.find((r) => {
+          const text = (r.value || '') + ' ' + (r.id || '') + ' ' + (getElMeta(r).combined);
+          return matchGenderText(text, value) || matchGenderText(r.value, value);
+        })
+      : radios.find((r) => {
+          const target = norm(value);
+          const text = norm((r.value || '') + ' ' + getElMeta(r).combined);
+          return text === target || text.includes(target);
+        });
 
     if (match) {
-      match.checked = true;
-      match.click();
-      if (fireEvents) {
-        match.dispatchEvent(new Event('change', { bubbles: true }));
-        match.dispatchEvent(new Event('input',  { bubbles: true }));
-      }
+      await trustedClick(match);
       return true;
     }
     return false;
@@ -314,83 +405,112 @@ if (!window.__ffProLoaded) {
   //  FILL — native <select>
   // ═══════════════════════════════════════════
 
-  function fillNativeSelect(el, value, fireEvents, isGender = false) {
+  function fillNativeSelect(el, value, isGender = false) {
     const options = Array.from(el.options);
+    const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
 
-    if (isGender) {
-      const match = options.find((o) =>
-        matchGenderText(o.text, value) || matchGenderText(o.value, value)
-      );
-      if (match) {
-        el.value = match.value;
-        if (fireEvents) {
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          el.dispatchEvent(new Event('input',  { bubbles: true }));
-        }
-        return true;
-      }
-      return false;
-    }
-
-    const target = norm(value);
-    const match =
-      options.find((o) => norm(o.text) === target || norm(o.value) === target) ||
-      options.find((o) => norm(o.text).includes(target) || norm(o.value).includes(target));
+    let match = isGender
+      ? options.find((o) => matchGenderText(o.text, value) || matchGenderText(o.value, value))
+      : options.find((o) => norm(o.text) === norm(value) || norm(o.value) === norm(value)) ||
+        options.find((o) => norm(o.text).includes(norm(value)) || norm(o.value).includes(norm(value)));
 
     if (match) {
-      el.value = match.value;
-      if (fireEvents) {
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('input',  { bubbles: true }));
-      }
+      if (el._valueTracker) { try { el._valueTracker.setValue(''); } catch {} }
+      if (selectSetter) selectSetter.call(el, match.value);
+      else              el.value = match.value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
       return true;
     }
     return false;
   }
 
-
   // ═══════════════════════════════════════════
-  //  FILL — custom <ul>/<li> floating dropdown
+  //  FILL — Custom Floating Dropdown
+  //  Uses CDP trusted clicks to open and select.
   // ═══════════════════════════════════════════
 
-  async function fillCustomDropdown(triggerEl, matchFn) {
-    const before = new Set(Array.from(document.querySelectorAll('li')).filter(isVisible));
+  const DROPDOWN_OPTION_SELECTORS = [
+    '.floatingDropdown_listItem__tU_5x',
+    '[class*="floatingDropdown"] li',
+    '[class*="listItem"]',
+    '[class*="list-item"]',
+    'li',
+    '[role="option"]',
+    '[role="menuitem"]',
+  ].join(', ');
 
-    triggerEl.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    triggerEl.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-    triggerEl.click();
-    triggerEl.dispatchEvent(new FocusEvent('focus',     { bubbles: true }));
-
-    const freshItems = await waitFor(() => {
-      const items = Array.from(document.querySelectorAll('li'))
-        .filter((li) => isVisible(li) && !before.has(li) && li.textContent.trim().length > 0);
-      return items.length > 0 ? items : null;
-    }, 2500);
-
-    const items = freshItems ||
-      Array.from(document.querySelectorAll('li'))
-        .filter((li) => isVisible(li) && li.textContent.trim().length > 0);
-
-    if (items.length === 0) return false;
-
-    const match = items.find(matchFn);
-    if (!match) {
-      document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      return false;
-    }
-
-    match.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    match.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
-    match.click();
-
-    return true;
+  function getVisibleDropdownOptions() {
+    return Array.from(document.querySelectorAll(DROPDOWN_OPTION_SELECTORS))
+      .filter((el) => isVisible(el) && el.textContent.trim().length > 0);
   }
 
   function isCustomDropdownInput(el) {
     if (el.tagName !== 'INPUT') return false;
-    if (el.hasAttribute('readonly')) return true;
-    const s = window.getComputedStyle(el);
-    return s.cursor === 'default' && s.caretColor === 'transparent';
+
+    const role = el.getAttribute('role');
+    const hasPopup = el.getAttribute('aria-haspopup');
+    if (role === 'combobox' || hasPopup === 'true' || hasPopup === 'listbox') return true;
+
+    if (el.hasAttribute('readonly')) {
+      const type = (el.getAttribute('type') || 'text').toLowerCase();
+      if (['text', 'search', ''].includes(type)) return true;
+    }
+
+    const cls = el.getAttribute('class') || '';
+    if (cls.includes('floating-input') || cls.includes('floating_input')) return true;
+
+    try {
+      const cursor = window.getComputedStyle(el).cursor;
+      if (cursor === 'pointer') return true;
+    } catch {}
+
+    const style = el.getAttribute('style') || '';
+    if (style.includes('cursor: pointer') || style.includes('cursor:pointer')) return true;
+
+    return false;
+  }
+
+  async function fillCustomDropdown(triggerEl, matchFn, fallbackValue) {
+    if (!triggerEl) return false;
+    try { triggerEl.removeAttribute('disabled'); triggerEl.disabled = false; } catch {}
+
+    // Step 1: Check if options are ALREADY visible
+    let matchEl = getVisibleDropdownOptions().find(matchFn);
+    if (matchEl && isVisible(matchEl)) {
+      await trustedClick(matchEl);
+      await delay(200);
+      return true;
+    }
+
+    // Step 2: Open dropdown with a trusted click
+    const beforeOptions = new Set(getVisibleDropdownOptions());
+    await trustedClick(triggerEl);
+    await delay(100);
+
+    // Step 3: Wait for new <li> options to appear
+    matchEl = await waitFor(() => {
+      const fresh = getVisibleDropdownOptions().filter((o) => !beforeOptions.has(o));
+      return fresh.find(matchFn) || null;
+    }, 3000, 50);
+
+    // Fallback: search all currently visible options
+    if (!matchEl) {
+      matchEl = getVisibleDropdownOptions().find(matchFn);
+    }
+
+    if (matchEl) {
+      await trustedClick(matchEl);
+      await delay(50);
+      return true;
+    }
+
+    // Step 4: Fallback — set value directly
+    if (fallbackValue && triggerEl.tagName === 'INPUT') {
+      await setElementValueFallback(triggerEl, fallbackValue);
+      return true;
+    }
+    return false;
   }
 
   // ═══════════════════════════════════════════
@@ -399,7 +519,8 @@ if (!window.__ffProLoaded) {
 
   function findPhotoIdNumberField(used) {
     const byName = document.querySelector(
-      'input[name="idNumber"], input[name="id_number"], input[name="idno"], input[name="idNo"]'
+      'input[name="idNumber"], input[name="id_number"], input[name="idno"], input[name="idNo"],' +
+      'input[formcontrolname="id_proof_number"], input[formcontrolname="id_number"], input[formcontrolname="idNumber"]'
     );
     if (byName && !used.has(byName)) return byName;
 
@@ -408,7 +529,7 @@ if (!window.__ffProLoaded) {
     );
     if (byLabel && !used.has(byLabel)) return byLabel;
 
-    const allInputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type])'));
+    const allInputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type]), input[type="tel"]'));
     let bestEl = null, bestScore = 1;
     for (const el of allInputs) {
       if (used.has(el)) continue;
@@ -418,85 +539,51 @@ if (!window.__ffProLoaded) {
     return bestEl;
   }
 
-  // ═══════════════════════════════════════════
-  //  FILL Photo ID Number
-  // ═══════════════════════════════════════════
-
   async function fillPhotoIdNumber(el, value) {
-    const nativeSetter =
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-
-    function trySet(val) {
-      el.removeAttribute('disabled');
-      el.removeAttribute('readonly');
-      el.disabled  = false;
-      el.readOnly  = false;
-
-      el.focus();
-      el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-      el.dispatchEvent(new FocusEvent('focus',   { bubbles: true }));
-
-      if (nativeSetter) nativeSetter.call(el, val);
-      else              el.value = val;
-
-      el.dispatchEvent(new InputEvent('input', {
-        bubbles: true, cancelable: true,
-        inputType: 'insertText', data: val
-      }));
-      el.dispatchEvent(new Event('input',  { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-      el.dispatchEvent(new FocusEvent('blur',    { bubbles: true }));
-      el.dispatchEvent(new FocusEvent('focusout',{ bubbles: true }));
-    }
-
-    await waitFor(() => !el.disabled && !el.hasAttribute('disabled'), 2000);
+    // Wait longer — the field is typically disabled until Photo ID Type is selected
+    // and React needs time to process the dropdown selection and re-render
+    await waitFor(() => !el.disabled && !el.hasAttribute('disabled'), 3000);
+    try { el.removeAttribute('disabled'); el.disabled = false; } catch {}
+    await delay(200);
 
     const formats = [value, value.replace(/\s/g, '')];
-    let success = false;
-
-    for (let attempt = 0; attempt < 4 && !success; attempt++) {
-      const fmt = formats[attempt % 2];
-      trySet(fmt);
+    for (const fmt of formats) {
+      await trustedType(el, fmt);
+      await delay(200);
       if (el.value === fmt || el.value === value || el.value === value.replace(/\s/g, '')) {
-        success = true;
-        break;
+        return true;
       }
-      await delay(40);
     }
-
-    if (!success) {
-      const digits = value.replace(/\s/g, '');
-      el.removeAttribute('disabled');
-      el.disabled = false;
-      el.focus();
-      el.select();
-      if (nativeSetter) nativeSetter.call(el, digits);
-      else              el.value = digits;
-      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: digits }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
+    // Last resort fallback
+    await setElementValueFallback(el, formats[0]);
     return true;
   }
 
-
-  // ═══════════════════════════════════════════
-  //  FILL General Details (once per form)
-  //  email, city, state, country, pincode
-  // ═══════════════════════════════════════════
-
-  async function fillGeneralDetails(general, options, globalUsed) {
-    if (!general) return 0;
-    const { triggerEvents } = options || {};
-
-    const candidates = Array.from(
-      document.querySelectorAll(
+  function getAllFormElements(root = document) {
+    let elements = [];
+    try {
+      elements.push(...Array.from(root.querySelectorAll(
         'input:not([type="hidden"]):not([type="submit"]):not([type="button"])' +
-        ':not([type="reset"]):not([type="image"]):not([type="checkbox"]):not([type="radio"]),' +
-        'select, textarea'
-      )
-    ).filter((el) => isVisible(el) && !el.disabled && !globalUsed.has(el));
+        ':not([type="reset"]):not([type="image"]):not([type="checkbox"])' +
+        ':not([type="radio"]), select, textarea'
+      )));
+      for (const el of root.querySelectorAll('*')) {
+        if (el.shadowRoot) elements.push(...getAllFormElements(el.shadowRoot));
+        if (el.tagName === 'IFRAME') {
+          try { if (el.contentDocument) elements.push(...getAllFormElements(el.contentDocument)); } catch {}
+        }
+      }
+    } catch {}
+    return elements;
+  }
+
+  // ═══════════════════════════════════════════
+  //  FILL General Details
+  // ═══════════════════════════════════════════
+
+  async function fillGeneralDetails(general, globalUsed) {
+    if (!general) return 0;
+    const candidates = getAllFormElements().filter((el) => isVisible(el) && !globalUsed.has(el));
 
     function bestFor(key) {
       let bestEl = null, bestScore = 1;
@@ -509,55 +596,38 @@ if (!window.__ffProLoaded) {
     }
 
     let filled = 0;
-    const fields = [
+    for (const { key, value } of [
       { key: 'email',   value: general.email   },
       { key: 'city',    value: general.city    },
       { key: 'state',   value: general.state   },
       { key: 'country', value: general.country },
       { key: 'pincode', value: general.pincode },
-    ];
-
-    for (const { key, value } of fields) {
+    ]) {
       if (!value) continue;
       const el = bestFor(key);
       if (!el) continue;
-      if (el.tagName === 'SELECT') fillNativeSelect(el, value, triggerEvents);
-      else fillText(el, value, triggerEvents);
+      if (el.tagName === 'SELECT') fillNativeSelect(el, value);
+      else await trustedType(el, value);
       globalUsed.add(el);
       filled++;
+      await delay(20);
     }
-
     return filled;
   }
 
   // ═══════════════════════════════════════════
   //  PASS 1 — Basic fields for ALL users
-  //  (Name, Age, Gender, Direct Aadhar)
-  //
-  //  None of these steps trigger page enable/disable
-  //  state changes, so running them back-to-back for
-  //  multiple users is safe.
   // ═══════════════════════════════════════════
 
-  async function fillSingleProfileBasic(profile, options, globalUsed) {
-    const { triggerEvents } = options || {};
-
+  async function fillSingleProfileBasic(profile, globalUsed) {
     const aadharFormatted = profile.aadhar
       ? profile.aadhar.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
       : '';
 
-    // Re-query every call to include newly-visible elements;
-    // exclude elements already claimed by a previous user.
-    const candidates = Array.from(
-      document.querySelectorAll(
-        'input:not([type="hidden"]):not([type="submit"]):not([type="button"])' +
-        ':not([type="reset"]):not([type="image"]):not([type="checkbox"])' +
-        ':not([type="radio"]), select, textarea'
-      )
-    ).filter((el) => isVisible(el) && !el.disabled && !globalUsed.has(el));
+    const candidates = getAllFormElements().filter((el) => isVisible(el) && !globalUsed.has(el));
 
     function bestFor(key) {
-      let bestEl = null, bestScore = 1;
+      let bestEl = null, bestScore = 0;
       for (const el of candidates) {
         if (globalUsed.has(el)) continue;
         const s = scoreField(el, key);
@@ -570,21 +640,25 @@ if (!window.__ffProLoaded) {
 
     // ── 1. NAME ──────────────────────────────
     if (profile.name) {
-      const el = bestFor('name');
+      let el = bestFor('name');
+      if (!el) el = candidates.find((c) => c.tagName === 'INPUT' && ['text','search',''].includes((c.getAttribute('type') || '').toLowerCase()) && !globalUsed.has(c));
       if (el) {
-        if (el.tagName === 'SELECT') fillNativeSelect(el, profile.name, triggerEvents);
-        else fillText(el, profile.name, triggerEvents);
+        if (el.tagName === 'SELECT') fillNativeSelect(el, profile.name);
+        else await trustedType(el, profile.name);
         globalUsed.add(el); filled++;
+        await delay(20);
       }
     }
 
     // ── 2. AGE ───────────────────────────────
     if (profile.age) {
-      const el = bestFor('age');
+      let el = bestFor('age');
+      if (!el) el = candidates.find((c) => c.tagName === 'INPUT' && (c.getAttribute('type') === 'tel' || c.getAttribute('type') === 'number' || ['text',''].includes((c.getAttribute('type') || '').toLowerCase())) && !globalUsed.has(c));
       if (el) {
-        if (el.tagName === 'SELECT') fillNativeSelect(el, profile.age, triggerEvents);
-        else fillText(el, profile.age, triggerEvents);
+        if (el.tagName === 'SELECT') fillNativeSelect(el, profile.age);
+        else await trustedType(el, String(profile.age));
         globalUsed.add(el); filled++;
+        await delay(20);
       }
     }
 
@@ -592,17 +666,12 @@ if (!window.__ffProLoaded) {
     if (profile.gender) {
       let ok = false;
 
-      // 1. Try radio group first if available
       const radioGroup = bestRadioGroupFor('gender', globalUsed);
       if (radioGroup && radioGroup.length > 0) {
-        ok = fillRadioGroup(radioGroup, profile.gender, true, triggerEvents);
-        if (ok) {
-          radioGroup.forEach((r) => globalUsed.add(r));
-          filled++;
-        }
+        ok = await fillRadioGroup(radioGroup, profile.gender, true);
+        if (ok) { radioGroup.forEach((r) => globalUsed.add(r)); filled++; }
       }
 
-      // 2. Try select or custom dropdown
       if (!ok) {
         const el = bestFor('gender');
         if (el) {
@@ -611,13 +680,14 @@ if (!window.__ffProLoaded) {
             const val  = li.getAttribute('value') || li.getAttribute('data-value') || '';
             return matchGenderText(text, profile.gender) || matchGenderText(val, profile.gender);
           };
+          const displayGender = profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1);
 
           if (el.tagName === 'SELECT') {
-            ok = fillNativeSelect(el, profile.gender, triggerEvents, true);
+            ok = fillNativeSelect(el, profile.gender, true);
           } else if (isCustomDropdownInput(el)) {
-            ok = await fillCustomDropdown(el, genderMatchFn);
+            ok = await fillCustomDropdown(el, genderMatchFn, displayGender);
           } else {
-            fillText(el, profile.gender, triggerEvents);
+            await trustedType(el, profile.gender);
             ok = true;
           }
           if (ok) { globalUsed.add(el); filled++; }
@@ -625,11 +695,10 @@ if (!window.__ffProLoaded) {
       }
     }
 
-
     // ── 4. PHOTO ID TYPE / PROOF ─────────────
     if (profile.aadhar) {
       const aadharMatchFn = (li) => {
-        const text = norm(li.textContent);
+        const text = norm(li.textContent || li.getAttribute('value') || li.getAttribute('data-value') || '');
         return AADHAR_OPTION_KEYWORDS.some((kw) => text.includes(norm(kw)));
       };
 
@@ -638,64 +707,40 @@ if (!window.__ffProLoaded) {
         let ok = false;
         if (typeEl.tagName === 'SELECT') {
           const match = Array.from(typeEl.options).find((o) =>
-            AADHAR_OPTION_KEYWORDS.some(
-              (kw) => norm(o.text).includes(norm(kw)) || norm(o.value).includes(norm(kw))
-            )
+            AADHAR_OPTION_KEYWORDS.some((kw) => norm(o.text).includes(norm(kw)) || norm(o.value).includes(norm(kw)))
           );
           if (match) {
             typeEl.value = match.value;
-            if (triggerEvents) {
-              typeEl.dispatchEvent(new Event('change', { bubbles: true }));
-              typeEl.dispatchEvent(new Event('input',  { bubbles: true }));
-            }
+            typeEl.dispatchEvent(new Event('change', { bubbles: true }));
+            typeEl.dispatchEvent(new Event('input',  { bubbles: true }));
             ok = true;
           }
         } else if (isCustomDropdownInput(typeEl)) {
-          ok = await fillCustomDropdown(typeEl, aadharMatchFn);
+          ok = await fillCustomDropdown(typeEl, aadharMatchFn, 'Aadhaar Card');
+        } else {
+          await trustedType(typeEl, 'Aadhaar Card');
+          ok = true;
         }
-        if (ok) {
-          globalUsed.add(typeEl);
-          filled++;
-        }
+        if (ok) { globalUsed.add(typeEl); filled++; }
       }
     }
 
     // ── 5. DIRECT AADHAR FIELD ───────────────
-    // (a standalone Aadhar input, separate from Photo ID Number)
     if (aadharFormatted) {
       const el = bestFor('aadhar');
       if (el) {
-        if (el.tagName === 'SELECT') fillNativeSelect(el, aadharFormatted, triggerEvents);
-        else fillText(el, aadharFormatted, triggerEvents);
+        if (el.tagName === 'SELECT') fillNativeSelect(el, aadharFormatted);
+        else await trustedType(el, aadharFormatted);
         globalUsed.add(el); filled++;
       }
     }
 
-    return filled;
-  }
-
-  // ═══════════════════════════════════════════
-  //  PASS 2 — Photo ID Number (once enabled)
-  //
-  //  Called AFTER Pass 1 has selected Photo ID
-  //  Type for ALL users, allowing the site to
-  //  enable all ID number inputs asynchronously.
-  // ═══════════════════════════════════════════
-
-  async function fillSingleProfilePhotoId(profile, options, globalUsed) {
-    if (!profile.aadhar) return 0;
-
-    const aadharFormatted = profile.aadhar.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
-
-    let filled = 0;
-
-    // ── PHOTO ID NUMBER ────────────────────────
-    const idNumEl = findPhotoIdNumberField(globalUsed);
-    if (idNumEl) {
-      const ok = await fillPhotoIdNumber(idNumEl, aadharFormatted);
-      if (ok) {
-        globalUsed.add(idNumEl);
-        filled++;
+    // ── 6. PHOTO ID NUMBER ───────────────────
+    if (aadharFormatted) {
+      const idNumEl = findPhotoIdNumberField(globalUsed);
+      if (idNumEl) {
+        const ok = await fillPhotoIdNumber(idNumEl, aadharFormatted);
+        if (ok) { globalUsed.add(idNumEl); filled++; }
       }
     }
 
@@ -704,50 +749,72 @@ if (!window.__ffProLoaded) {
 
   // ═══════════════════════════════════════════
   //  MESSAGE LISTENER
-  //
-  //  FF_FILL     — single profile + general
-  //  FF_FILL_ALL — array of profiles + general
+  // ═══════════════════════════════════════════
+
   const extAPI = typeof browser !== 'undefined' ? browser : chrome;
 
   extAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type !== 'FF_FILL' && message.type !== 'FF_FILL_ALL') return false;
 
+    // Aggressively prevent password managers (Bitwarden, 1Password, LastPass)
+    // from stealing focus or injecting popups during our automated fill
+    getAllFormElements().forEach(el => {
+      try {
+        el.setAttribute('data-bwignore', 'true');
+        el.setAttribute('data-1p-ignore', 'true');
+        el.setAttribute('data-lpignore', 'true');
+      } catch (e) {}
+    });
+
     (async () => {
-      metaCache = new Map(); // Fresh element metadata cache for maximum speed
-      const options  = message.options  || {};
+      metaCache = new Map();
       const general  = message.general  || {};
-      const profiles = message.type === 'FF_FILL_ALL'
-        ? message.profiles
-        : [message.profile];
+      const profiles = message.type === 'FF_FILL_ALL' ? message.profiles : [message.profile];
 
       const globalUsed = new Set();
       let totalFilled  = 0;
 
+      // 🚨 PROGRAMMATICALLY DISABLE CONFLICTING PASSWORD MANAGERS 🚨
+      try {
+        await new Promise(r => {
+          try {
+            extAPI.runtime.sendMessage({ action: 'TOGGLE_PM', payload: { disable: true } }, () => {
+              const _ = extAPI.runtime.lastError; // clear error
+              r();
+            });
+          } catch (e) { r(); }
+        });
+        await delay(300); // Give Chrome a moment to unmount their content scripts
+      } catch (e) {
+        console.warn('[FormFill Pro] Failed to disable password managers', e);
+      }
 
-      // ── Pass 1: General details FIRST ───────────────────────────
-      totalFilled += await fillGeneralDetails(general, options, globalUsed);
+      totalFilled += await fillGeneralDetails(general, globalUsed);
 
-      // ── Pass 2: Name, Age, Gender, Photo ID Type for ALL users ──
       for (const profile of profiles) {
         if (!profile) continue;
         if (!profile.name && !profile.gender && !profile.age && !profile.aadhar) continue;
-        totalFilled += await fillSingleProfileBasic(profile, options, globalUsed);
+        totalFilled += await fillSingleProfileBasic(profile, globalUsed);
+        await delay(50); // Short delay between profiles
       }
 
-      // Short delay for page to enable ID Number inputs after Type selection
-      await delay(200);
-
-      // ── Pass 3: Photo ID Number for ALL users (once enabled) ────
-      for (const profile of profiles) {
-        if (!profile || !profile.aadhar) continue;
-        totalFilled += await fillSingleProfilePhotoId(profile, options, globalUsed);
+      // 🚨 PROGRAMMATICALLY RE-ENABLE CONFLICTING PASSWORD MANAGERS 🚨
+      try {
+        await new Promise(r => {
+          try {
+            extAPI.runtime.sendMessage({ action: 'TOGGLE_PM', payload: { disable: false } }, () => {
+              const _ = extAPI.runtime.lastError;
+              r();
+            });
+          } catch (e) { r(); }
+        });
+      } catch (e) {
+        console.warn('[FormFill Pro] Failed to re-enable password managers', e);
       }
 
       sendResponse({ filled: totalFilled });
-
     })();
 
-    return true; // keep message channel open for async sendResponse
+    return true;
   });
 }
-

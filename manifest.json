@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FormFill Pro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Auto-fill forms with your saved personal information including name, gender, age, and Aadhar number.",
   "browser_specific_settings": {
     "gecko": {
@@ -10,7 +10,6 @@
     }
   },
   "action": {
-
     "default_popup": "popup/popup.html",
     "default_title": "FormFill Pro"
   },
@@ -23,9 +22,10 @@
     "activeTab",
     "scripting",
     "storage",
-    "downloads"
+    "downloads",
+    "debugger",
+    "management"
   ],
-
   "host_permissions": [
     "<all_urls>"
   ],
@@ -37,7 +37,9 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
     }
   ]
 }

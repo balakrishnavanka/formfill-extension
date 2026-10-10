@@ -443,7 +443,7 @@ async function getActiveTab() {
 
 async function ensureContentScript(tabId) {
   try {
-    await extAPI.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await extAPI.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['content.js'] });
   } catch { /* already injected or restricted page */ }
 }
 
